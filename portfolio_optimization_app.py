@@ -21,41 +21,44 @@ if tickers_input:
     tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
     st.write(f"Fetching historical data for: {', '.join(tickers)}")
     
-    # Fetch 1 year of historical data
+    # Fetch 1 year of historical data.
+    # Option 1: Use auto_adjust=True so that "Close" is adjusted.
+    # data = yf.download(tickers, period="1y", auto_adjust=True)
+    # Option 2: Use default parameters (which returns "Close", "High", etc.)
     data = yf.download(tickers, period="1y")
     
     # Debug: Show the structure of the DataFrame
     st.write("### Debug Info: Data Columns")
     st.write(data.columns)
     
-    # Initialize a flag for successful extraction
     data_extracted = False
     
-    # Check if the DataFrame has a MultiIndex (for multiple tickers)
     if isinstance(data.columns, pd.MultiIndex):
         st.write("MultiIndex detected.")
-        st.write("First level (tickers):", list(data.columns.get_level_values(0).unique()))
-        st.write("Second level (fields):", list(data.columns.get_level_values(1).unique()))
-        # Now check for 'Adj Close' in the second level
-        if "Adj Close" in data.columns.get_level_values(1):
-            # Use .xs() to extract data from the second level
-            data = data.xs("Adj Close", axis=1, level=1)
-            data_extracted = True
-        elif "Adj_Close" in data.columns.get_level_values(1):
-            data = data.xs("Adj_Close", axis=1, level=1)
+        st.write("First level (fields):", list(data.columns.get_level_values(0).unique()))
+        st.write("Second level (tickers):", list(data.columns.get_level_values(1).unique()))
+        # Try to extract "Adj Close" from the second level first
+        if "Adj Close" in data.columns.get_level_values(0):
+            # If "Adj Close" is available as a first-level field, extract it.
+            data = data["Adj Close"]
             data_extracted = True
         else:
-            st.error("The MultiIndex data does not contain 'Adj Close' or 'Adj_Close' in the second level.")
+            # Fallback: if "Adj Close" is not available, try "Close"
+            if "Close" in data.columns.get_level_values(0):
+                data = data["Close"]
+                data_extracted = True
+            else:
+                st.error("The MultiIndex data does not contain 'Adj Close' or 'Close' in the first level.")
     else:
-        # For a single ticker, try to extract a DataFrame with one column
+        # Single ticker case
         if "Adj Close" in data.columns:
             data = data[["Adj Close"]]
             data_extracted = True
-        elif "Adj_Close" in data.columns:
-            data = data[["Adj_Close"]]
+        elif "Close" in data.columns:
+            data = data[["Close"]]
             data_extracted = True
         else:
-            st.error("The data does not contain an 'Adj Close' or 'Adj_Close' column.")
+            st.error("The data does not contain an 'Adj Close' or 'Close' column.")
     
     if not data_extracted:
         st.stop()
@@ -63,7 +66,6 @@ if tickers_input:
     if data.empty:
         st.error("No data was fetched. Please check your ticker symbols or the data source.")
     else:
-        # Drop rows with any missing data
         data.dropna(inplace=True)
         st.write("Historical data successfully fetched!")
         
@@ -104,10 +106,10 @@ if tickers_input:
         
         # Plot a hypothetical portfolio value over time
         st.write("### Hypothetical Portfolio Value Over Time")
-        # Compute daily returns weighted by the portfolio allocation
         daily_returns = data.pct_change().dropna()
         weights_series = pd.Series(cleaned_weights)
         
+        # Handle single ticker vs. multiple tickers for computing portfolio returns
         if len(weights_series) == 1:
             portfolio_daily_returns = daily_returns * weights_series.iloc[0]
         else:
