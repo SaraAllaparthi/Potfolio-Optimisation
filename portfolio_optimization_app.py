@@ -71,8 +71,8 @@ investment_value = st.sidebar.number_input("Total Investment Value ($)", value=1
 # -------------------------------
 # Main Title
 # -------------------------------
-st.title("Portfolio Optimization Dashboard")
-st.markdown("#### Optimize your portfolio based on investment value using historical data.")
+st.title("AI Portfolio Optimization Agent")
+st.markdown("#### This agent automatically optimizes your portfolio using historical data and efficient frontier logic.")
 
 # -------------------------------
 # Helper Functions
@@ -108,8 +108,7 @@ def fetch_price_data(tickers, period="1y"):
 
 def optimal_portfolio_from_frontier(mu, S, target_returns):
     """
-    Loop over a range of target returns using the efficient frontier,
-    and return the portfolio with the highest Sharpe ratio.
+    Loop over a range of target returns using the efficient frontier and return the portfolio with the highest Sharpe ratio.
     """
     best_sharpe = -np.inf
     best_weights = None
@@ -153,7 +152,7 @@ if tickers_input:
             mu = expected_returns.mean_historical_return(data)
             S = risk_models.sample_cov(data)
             
-            # Create a range of target returns – using a slightly wider range for flexibility.
+            # Create a range of target returns – use a slightly wider range for flexibility.
             target_returns = np.linspace(mu.min() * 0.9, mu.max() * 1.1, 50)
             opt_weights, opt_perf = optimal_portfolio_from_frontier(mu, S, target_returns)
             
@@ -205,7 +204,7 @@ if tickers_input:
             st.markdown(
                 """
                 **What is the Efficient Frontier?**  
-                It represents the best balance between risk and return. In simple terms, it shows you the “sweet spot” portfolios that offer the highest expected return for a given level of risk.
+                It represents the best balance between risk and return – the "sweet spot" portfolios that offer the highest expected return for a given level of risk.
                 """
             )
             frontier_vols = []
