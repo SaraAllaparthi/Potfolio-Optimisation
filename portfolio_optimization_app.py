@@ -22,19 +22,29 @@ if tickers_input:
     tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
     st.write(f"Fetching historical data for: {', '.join(tickers)}")
     
-    # Fetch 1 year of historical adjusted closing price data
+    # Fetch 1 year of historical data
     data = yf.download(tickers, period="1y")
     
-    # Handle data differently if it's a MultiIndex (multiple tickers) or not (single ticker)
-    if isinstance(data.columns, pd.MultiIndex):
-        # Extract the "Adj Close" level from the MultiIndex DataFrame
-        data = data["Adj Close"]
-    else:
-        # For a single ticker, ensure the column is in a DataFrame
-        data = data[["Adj Close"]]
+    # Debug: Show the columns to see the structure of the DataFrame
+    st.write("Data Columns:", data.columns)
+    
+    # Try to extract the "Adj Close" data
+    try:
+        if isinstance(data.columns, pd.MultiIndex):
+            # Check if "Adj Close" exists in the top level of the MultiIndex
+            if "Adj Close" in data.columns.get_level_values(0):
+                data = data["Adj Close"]
+            else:
+                st.error("The fetched data does not contain 'Adj Close' information.")
+        elif "Adj Close" in data.columns:
+            data = data[["Adj Close"]]
+        else:
+            st.error("The fetched data does not contain an 'Adj Close' column.")
+    except Exception as e:
+        st.error(f"Error extracting 'Adj Close' data: {e}")
     
     if data.empty:
-        st.error("No data was fetched. Please check your ticker symbols.")
+        st.error("No data was fetched. Please check your ticker symbols or the data source.")
     else:
         # Drop rows with any missing data
         data.dropna(inplace=True)
@@ -70,13 +80,13 @@ if tickers_input:
         st.write("### Hypothetical Portfolio Value Over Time")
         # Compute daily returns weighted by the portfolio allocation
         daily_returns = data.pct_change().dropna()
-        # Convert weights into a Series aligned with the data columns
         weights_series = pd.Series(cleaned_weights)
-        # For single-ticker data, align the index properly
-        if len(weights_series) == 1 and isinstance(data, pd.DataFrame):
+        
+        if len(weights_series) == 1:
             portfolio_daily_returns = daily_returns * weights_series.iloc[0]
         else:
             portfolio_daily_returns = (daily_returns * weights_series).sum(axis=1)
+        
         portfolio_value = (1 + portfolio_daily_returns).cumprod() * investment_value
         
         st.line_chart(portfolio_value)
