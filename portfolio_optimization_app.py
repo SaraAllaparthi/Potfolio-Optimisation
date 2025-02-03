@@ -37,18 +37,15 @@ if tickers_input:
         st.write("MultiIndex detected.")
         st.write("First level (fields):", list(data.columns.get_level_values(0).unique()))
         st.write("Second level (tickers):", list(data.columns.get_level_values(1).unique()))
-        # Try to extract "Adj Close" from the second level first
+        # Try to extract "Adj Close" from the first level; if not, fallback to "Close"
         if "Adj Close" in data.columns.get_level_values(0):
-            # If "Adj Close" is available as a first-level field, extract it.
             data = data["Adj Close"]
             data_extracted = True
+        elif "Close" in data.columns.get_level_values(0):
+            data = data["Close"]
+            data_extracted = True
         else:
-            # Fallback: if "Adj Close" is not available, try "Close"
-            if "Close" in data.columns.get_level_values(0):
-                data = data["Close"]
-                data_extracted = True
-            else:
-                st.error("The MultiIndex data does not contain 'Adj Close' or 'Close' in the first level.")
+            st.error("The MultiIndex data does not contain 'Adj Close' or 'Close' in the first level.")
     else:
         # Single ticker case
         if "Adj Close" in data.columns:
@@ -122,8 +119,10 @@ if tickers_input:
         st.write("### Efficient Frontier (Optional)")
         try:
             from pypfopt import plotting
+            # Create a new instance for plotting so constraints are not re-added.
+            ef_plot = EfficientFrontier(mu, S)
             fig, ax = plt.subplots(figsize=(6, 4))
-            plotting.plot_efficient_frontier(ef, ax=ax, show_assets=True)
+            plotting.plot_efficient_frontier(ef_plot, ax=ax, show_assets=True)
             st.pyplot(fig)
         except Exception as e:
             st.write("Could not generate efficient frontier plot.", e)
