@@ -2,13 +2,12 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from pypfopt import risk_models, EfficientFrontier
-from pypfopt.black_litterman import BlackLittermanModel
+from pypfopt import EfficientFrontier, risk_models, expected_returns
 import plotly.express as px
 
 # --- Page Config & Custom CSS ---
 st.set_page_config(
-    page_title="Black–Litterman Portfolio Optimization",
+    page_title="Portfolio Optimization Dashboard",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -66,10 +65,31 @@ tickers_input = st.sidebar.text_input("Stock Tickers")
 investment_value = st.sidebar.number_input("Total Investment Value ($)", value=10000.0, step=100.0)
 
 # --- Main Title ---
-st.title("Black–Litterman Portfolio Optimization")
-st.markdown("#### Optimize your portfolio using a Black–Litterman approach to adjust expected returns with market views.")
+st.title("Portfolio Optimization Dashboard")
+st.markdown("#### Optimize your portfolio based on investment value using live data from yfinance.")
 
-# --- Data Fetching & Cleaning ---
+def optimal_portfolio_from_frontier(mu, S, target_returns):
+    """Loop over a range of target returns to compute portfolios via the efficient frontier,
+    and return the portfolio with the highest Sharpe ratio."""
+    best_sharpe = -np.inf
+    best_weights = None
+    best_perf = None  # (expected return, volatility, sharpe ratio)
+    
+    for target in target_returns:
+        ef_temp = EfficientFrontier(mu, S)
+        try:
+            # Force the portfolio to have a given expected return
+            ef_temp.efficient_return(target)
+            ret, vol, sr = ef_temp.portfolio_performance(verbose=False)
+            if sr > best_sharpe:
+                best_sharpe = sr
+                best_weights = ef_temp.clean_weights()
+                best_perf = (ret, vol, sr)
+        except Exception:
+            # Skip any targets that fail the optimization
+            continue
+    return best_weights, best_perf
+
 if tickers_input:
     tickers = [ticker.strip().upper() for ticker in tickers_input.split(",") if ticker.strip()]
     if len(tickers) < 2:
@@ -78,11 +98,12 @@ if tickers_input:
         st.error("Please enter no more than **5** stock tickers.")
     else:
         st.markdown(f"### Fetching Historical Data for: **{', '.join(tickers)}**")
-        # Fetch 1 year of data
+        
+        # Download historical data for 1 year
         data = yf.download(tickers, period="1y")
         data_extracted = False
 
-        # Handle MultiIndex: if multiple tickers, yfinance returns a MultiIndex
+        # Handle MultiIndex: yfinance returns a MultiIndex for multiple tickers.
         if isinstance(data.columns, pd.MultiIndex):
             if "Adj Close" in data.columns.get_level_values(0):
                 data = data["Adj Close"]
@@ -101,62 +122,44 @@ if tickers_input:
                 data_extracted = True
             else:
                 st.error("The data does not contain an 'Adj Close' or 'Close' column.")
-                
+
         if not data_extracted:
             st.stop()
+
         if data.empty:
             st.error("No data was fetched. Please check the ticker symbols or try again later.")
         else:
             data.dropna(inplace=True)
             st.success("Historical data successfully fetched!")
             
-            # --- Calculate Covariance Matrix ---
+            # --- Portfolio Optimization Using Efficient Frontier Logic ---
+            st.markdown("## Portfolio Optimization")
+            st.markdown("Calculating expected returns and constructing the efficient frontier...")
+            
+            mu = expected_returns.mean_historical_return(data)
             S = risk_models.sample_cov(data)
-
-            # --- Set Up Black–Litterman Model ---
-            # Use equal market weights as a proxy for market capitalization
-            market_weights = np.array([1/len(tickers)] * len(tickers))
             
-            # Set up views.
-            # Example: if AAPL and MSFT are present, assume a view that AAPL will outperform MSFT by 2%.
-            if "AAPL" in tickers and "MSFT" in tickers:
-                # Create a view matrix P: 1 for AAPL, -1 for MSFT, 0 for others.
-                P = np.zeros((1, len(tickers)))
-                idx_aapl = tickers.index("AAPL")
-                idx_msft = tickers.index("MSFT")
-                P[0, idx_aapl] = 1
-                P[0, idx_msft] = -1
-                Q = np.array([0.02])  # AAPL is expected to outperform MSFT by 2%
-            else:
-                # Otherwise, set an absolute view on the first ticker (e.g., expected return of 15%)
-                P = np.zeros((1, len(tickers)))
-                P[0, 0] = 1
-                Q = np.array([0.15])
+            # Create a range of target returns. Here, we use a slightly wider range for flexibility.
+            target_returns = np.linspace(mu.min() * 0.9, mu.max() * 1.1, 50)
+            opt_weights, opt_perf = optimal_portfolio_from_frontier(mu, S, target_returns)
             
-            # Create Black–Litterman model instance.
-            try:
-                bl = BlackLittermanModel(S, pi=None, market_caps=market_weights, delta=2.5, P=P, Q=Q)
-                bl_returns = bl.bl_returns()  # These are the adjusted expected returns
-            except Exception as e:
-                st.error(f"Error constructing Black–Litterman model: {e}")
-                st.stop()
+            # Fallback to max_sharpe() if frontier search did not yield any portfolio
+            if opt_weights is None:
+                st.warning("Efficient frontier search failed; falling back to max_sharpe() optimization.")
+                ef = EfficientFrontier(mu, S)
+                try:
+                    opt_weights = ef.max_sharpe()
+                    opt_weights = ef.clean_weights()
+                    opt_perf = ef.portfolio_performance(verbose=False)
+                except Exception as e:
+                    st.error(f"Error during fallback optimization: {e}")
+                    st.stop()
             
-            # --- Optimize Portfolio with Black–Litterman Returns ---
-            try:
-                ef = EfficientFrontier(bl_returns, S)
-                opt_weights = ef.max_sharpe()
-                opt_weights = ef.clean_weights()
-                perf = ef.portfolio_performance(verbose=False)
-            except Exception as e:
-                st.error(f"Error during portfolio optimization: {e}")
-                st.stop()
-            
-            # --- Display Results ---
             st.markdown("### Optimal Portfolio Weights")
             for ticker, weight in opt_weights.items():
                 st.write(f"**{ticker}:** {weight:.4f}")
-                
-            exp_return, exp_volatility, sharpe_ratio = perf
+            
+            exp_return, exp_volatility, sharpe_ratio = opt_perf
             st.markdown("### Portfolio Performance")
             col1, col2, col3 = st.columns(3)
             col1.metric("Expected Annual Return", f"{exp_return*100:.2f}%")
@@ -165,10 +168,9 @@ if tickers_input:
             
             st.markdown("### Investment Allocation (in $)")
             allocation = {ticker: weight * investment_value for ticker, weight in opt_weights.items()}
-            alloc_df = pd.DataFrame.from_dict(allocation, orient="index", columns=["$ Allocation"])
+            alloc_df = pd.DataFrame.from_dict(allocation, orient='index', columns=["$ Allocation"])
             st.dataframe(alloc_df.style.format({"$ Allocation": "${:,.2f}"}))
             
-            # --- Cumulative Portfolio Value Over Time ---
             st.markdown("### Cumulative Portfolio Value Over Time")
             daily_returns = data.pct_change().dropna()
             weights_series = pd.Series(opt_weights)
@@ -187,12 +189,11 @@ if tickers_input:
                 It represents the best balance between risk and return. In simple terms, it shows you the “sweet spot” portfolios that offer the highest expected return for a given level of risk.
                 """
             )
-            # For visualization, we re-calculate the frontier using the same target returns range
-            target_returns = np.linspace(bl_returns.min(), bl_returns.max(), 50)
+            # Re-calculate the frontier for visualization
             frontier_vols = []
             frontier_rets = []
             for target in target_returns:
-                ef_temp = EfficientFrontier(bl_returns, S)
+                ef_temp = EfficientFrontier(mu, S)
                 try:
                     ef_temp.efficient_return(target)
                     ret, vol, _ = ef_temp.portfolio_performance(verbose=False)
@@ -200,6 +201,7 @@ if tickers_input:
                     frontier_rets.append(ret)
                 except Exception:
                     continue
+            
             df_frontier = pd.DataFrame({
                 "Risk (Volatility)": frontier_vols,
                 "Expected Return": frontier_rets
