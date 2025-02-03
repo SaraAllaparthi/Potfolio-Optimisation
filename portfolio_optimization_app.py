@@ -4,8 +4,8 @@ import pandas as pd
 import numpy as np
 from datetime import date, timedelta
 from pypfopt import EfficientFrontier, risk_models, expected_returns
-import matplotlib.pyplot as plt
 import plotly.express as px
+import matplotlib.pyplot as plt
 
 # --- Page Config & Custom CSS ---
 st.set_page_config(
@@ -14,23 +14,47 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Custom CSS for improved appearance
 st.markdown(
     """
     <style>
-    .main { 
-        background-color: #f9f9f9;
-        font-family: 'Arial', sans-serif;
+    /* General layout */
+    body {
+        background-color: #f0f2f6;
+        color: #333333;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
-    .big-font {
-        font-size:20px !important;
+    /* Main container styling */
+    .css-18e3th9 {
+        padding: 2rem;
     }
-    .header {
-        font-size:26px;
-        font-weight: bold;
+    /* Title styling */
+    h1 {
+        color: #2c3e50;
+        font-weight: 700;
     }
-    .subheader {
-        font-size:20px;
-        font-weight: bold;
+    h2, h3, h4 {
+        color: #34495e;
+    }
+    /* Sidebar styling */
+    .css-1d391kg {
+        background-color: #ffffff;
+        border-right: 1px solid #dfe6e9;
+    }
+    /* Button styling */
+    .stButton>button {
+        background-color: #2c3e50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 0.5rem 1rem;
+    }
+    /* Metric styling */
+    .css-1um0q6e {
+        background-color: #ecf0f1;
+        border: 1px solid #bdc3c7;
+        border-radius: 5px;
+        padding: 1rem;
     }
     </style>
     """,
@@ -60,9 +84,9 @@ if tickers_input:
         # Download historical data for 1 year
         data = yf.download(tickers, period="1y")
         
-        # Remove debug info for a clean dashboard
         data_extracted = False
 
+        # Handle MultiIndex: yfinance returns a MultiIndex for multiple tickers.
         if isinstance(data.columns, pd.MultiIndex):
             # Try to extract "Adj Close" first; if not available, fallback to "Close"
             if "Adj Close" in data.columns.get_level_values(0):
@@ -143,12 +167,11 @@ if tickers_input:
             st.markdown("### Efficient Frontier")
             st.markdown(
                 """
-                **Efficient Frontier Explained:**  
-                This curve shows you the best balance between risk and return you can achieve with your chosen stocks.  
-                Portfolios on this curve are considered optimal—they offer the highest expected return for a given level of risk.
+                **What is the Efficient Frontier?**  
+                The efficient frontier represents the best balance between risk and return.  
+                In simple terms, it shows you the “sweet spot” portfolios that offer the highest expected return for a given level of risk.
                 """
             )
-            
             # Calculate a range of target returns along the frontier
             points = 50
             target_returns = np.linspace(mu.min(), mu.max(), points)
@@ -163,21 +186,20 @@ if tickers_input:
                     frontier_vols.append(vol)
                     frontier_rets.append(ret)
                 except Exception:
-                    # If optimization fails for a target, skip it.
                     pass
             
             df_frontier = pd.DataFrame({
-                "Volatility (Risk)": frontier_vols,
+                "Risk (Volatility)": frontier_vols,
                 "Expected Return": frontier_rets
             })
             fig = px.line(
                 df_frontier,
-                x="Volatility (Risk)",
+                x="Risk (Volatility)",
                 y="Expected Return",
                 title="Efficient Frontier: Optimal Risk-Return Trade-off",
-                labels={"Volatility (Risk)": "Risk (Volatility)", "Expected Return": "Expected Return"}
+                labels={"Risk (Volatility)": "Risk (Volatility)", "Expected Return": "Expected Return"}
             )
-            fig.update_traces(mode="markers+lines", marker=dict(size=8))
+            fig.update_traces(mode="markers+lines", marker=dict(size=8, color="#2c3e50"))
             st.plotly_chart(fig, use_container_width=True)
             
             st.markdown("### Disclaimer")
