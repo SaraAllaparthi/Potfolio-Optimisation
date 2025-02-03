@@ -24,25 +24,28 @@ if tickers_input:
     # Fetch 1 year of historical data
     data = yf.download(tickers, period="1y")
     
-    # Debug: Show the columns and structure of the DataFrame
+    # Debug: Show the structure of the DataFrame
     st.write("### Debug Info: Data Columns")
     st.write(data.columns)
     
     # Initialize a flag for successful extraction
     data_extracted = False
     
-    # Check if the DataFrame has a MultiIndex (multiple tickers)
+    # Check if the DataFrame has a MultiIndex (for multiple tickers)
     if isinstance(data.columns, pd.MultiIndex):
-        st.write("MultiIndex detected. First level:", list(data.columns.get_level_values(0).unique()))
-        # Try the common options for adjusted close
-        if "Adj Close" in data.columns.get_level_values(0):
-            data = data["Adj Close"]
+        st.write("MultiIndex detected.")
+        st.write("First level (tickers):", list(data.columns.get_level_values(0).unique()))
+        st.write("Second level (fields):", list(data.columns.get_level_values(1).unique()))
+        # Now check for 'Adj Close' in the second level
+        if "Adj Close" in data.columns.get_level_values(1):
+            # Use .xs() to extract data from the second level
+            data = data.xs("Adj Close", axis=1, level=1)
             data_extracted = True
-        elif "Adj_Close" in data.columns.get_level_values(0):
-            data = data["Adj_Close"]
+        elif "Adj_Close" in data.columns.get_level_values(1):
+            data = data.xs("Adj_Close", axis=1, level=1)
             data_extracted = True
         else:
-            st.error("The MultiIndex data does not contain 'Adj Close' or 'Adj_Close' in the first level.")
+            st.error("The MultiIndex data does not contain 'Adj Close' or 'Adj_Close' in the second level.")
     else:
         # For a single ticker, try to extract a DataFrame with one column
         if "Adj Close" in data.columns:
@@ -60,7 +63,7 @@ if tickers_input:
     if data.empty:
         st.error("No data was fetched. Please check your ticker symbols or the data source.")
     else:
-        # Drop rows with missing data
+        # Drop rows with any missing data
         data.dropna(inplace=True)
         st.write("Historical data successfully fetched!")
         
