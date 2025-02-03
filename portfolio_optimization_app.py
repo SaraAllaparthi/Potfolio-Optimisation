@@ -2,10 +2,13 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from datetime import date, timedelta
 from pypfopt import EfficientFrontier, risk_models, expected_returns
+import plotly.express as px
+import matplotlib.pyplot as plt
 
 # ------------------------------
-# Define the Portfolio Optimization Agent
+# Portfolio Optimization Agent Class
 # ------------------------------
 class PortfolioOptimizationAgent:
     def __init__(self, tickers, investment_value=10000.0, period="1y"):
@@ -21,15 +24,13 @@ class PortfolioOptimizationAgent:
 
     def fetch_data(self):
         """
-        Fetch historical data from yfinance and extract the price column.
-        Handles multiple tickers by checking if the data is returned as a MultiIndex.
+        Fetch historical data from yfinance and extract the appropriate price column.
         """
         st.info(f"Fetching data for: {', '.join(self.tickers)}")
         data = yf.download(self.tickers, period=self.period)
 
-        # Handle multiple tickers: yfinance returns a DataFrame with a MultiIndex for columns.
+        # Handle multiple tickers (MultiIndex) or a single ticker.
         if isinstance(data.columns, pd.MultiIndex):
-            # Try "Adj Close" first; if not, fall back to "Close"
             if "Adj Close" in data.columns.get_level_values(0):
                 data = data["Adj Close"]
             elif "Close" in data.columns.get_level_values(0):
@@ -38,7 +39,6 @@ class PortfolioOptimizationAgent:
                 st.error("Data does not contain 'Adj Close' or 'Close'.")
                 return
         else:
-            # Single ticker: ensure data is in DataFrame format
             if "Adj Close" in data.columns:
                 data = data[["Adj Close"]]
             elif "Close" in data.columns:
@@ -52,9 +52,7 @@ class PortfolioOptimizationAgent:
 
     def optimize_portfolio(self):
         """
-        Compute the optimal portfolio weights by:
-          - Calculating expected returns and the sample covariance matrix.
-          - Optimizing for maximum Sharpe ratio.
+        Calculate expected returns, covariance matrix, and optimize the portfolio for maximum Sharpe ratio.
         """
         if self.data is None:
             st.error("No data available. Please check your ticker symbols.")
@@ -66,14 +64,14 @@ class PortfolioOptimizationAgent:
         ef = EfficientFrontier(mu, S)
         try:
             weights = ef.max_sharpe()
-            self.optimal_weights = ef.clean_weights()  # Clean the weights (rounding, etc.)
+            self.optimal_weights = ef.clean_weights()
             self.performance = ef.portfolio_performance(verbose=False)
         except Exception as e:
             st.error(f"Error during optimization: {e}")
 
     def get_portfolio_recommendation(self):
         """
-        Returns a dictionary with:
+        Returns a dictionary containing:
           - Optimal weights
           - Expected annual return
           - Annual volatility
@@ -100,27 +98,29 @@ class PortfolioOptimizationAgent:
 # ------------------------------
 
 st.set_page_config(page_title="Portfolio Optimization Agent", layout="wide")
-
 st.title("Portfolio Optimization Agent Demo")
-st.markdown("Enter stock tickers (comma-separated) and your total investment value, then click the button below to optimize your portfolio.")
+st.markdown("Enter stock tickers (comma-separated) and your total investment value, then click **Optimize Portfolio** to see your results.")
 
-# User inputs
-tickers_input = st.text_input("Stock Tickers", value="AAPL, MSFT, GOOGL")
-investment_value = st.number_input("Total Investment Value ($)", value=10000.0, step=100.0)
+# Sidebar Inputs
+st.sidebar.header("Portfolio Inputs")
+st.sidebar.markdown("Enter **2 to 5** stock tickers (comma-separated):")
+tickers_input = st.sidebar.text_input("Stock Tickers")
+investment_value = st.sidebar.number_input("Total Investment Value ($)", value=10000.0, step=100.0)
 
 if st.button("Optimize Portfolio"):
     # Clean input tickers
     tickers = [ticker.strip() for ticker in tickers_input.split(",") if ticker.strip()]
     if len(tickers) < 2:
         st.error("Please enter at least 2 stock tickers.")
+    elif len(tickers) > 5:
+        st.error("Please enter no more than 5 stock tickers.")
     else:
-        # Create an instance of the agent and run the optimization
+        # Instantiate and run the agent
         agent = PortfolioOptimizationAgent(tickers, investment_value)
         agent.fetch_data()
         if agent.data is not None:
             agent.optimize_portfolio()
             recommendation = agent.get_portfolio_recommendation()
-
             if recommendation:
                 st.markdown("## Optimal Portfolio Weights")
                 for ticker, weight in recommendation["optimal_weights"].items():
@@ -139,3 +139,26 @@ if st.button("Optimize Portfolio"):
                 allocation = recommendation["investment_allocation"]
                 alloc_df = pd.DataFrame.from_dict(allocation, orient='index', columns=["$ Allocation"])
                 st.dataframe(alloc_df.style.format({"$ Allocation": "${:,.2f}"}))
+
+                # Calculate portfolio daily returns and cumulative value over time.
+                daily_returns = agent.data.pct_change().dropna()
+                weights_series = pd.Series(agent.optimal_weights)
+                if len(weights_series) == 1:
+                    portfolio_daily_returns = daily_returns * weights_series.iloc[0]
+                else:
+                    portfolio_daily_returns = (daily_returns * weights_series).sum(axis=1)
+                portfolio_value = (1 + portfolio_daily_returns).cumprod() * investment_value
+
+                st.markdown("## Cumulative Portfolio Value Over Time")
+                st.line_chart(portfolio_value)
+
+                # Additional Chart: Monthly Returns
+                st.markdown("## Monthly Returns")
+                # Compute monthly returns from daily returns
+                monthly_returns = portfolio_daily_returns.resample("M").apply(lambda x: (1 + x).prod() - 1)
+                monthly_returns_df = monthly_returns.reset_index()
+                monthly_returns_df["Month"] = monthly_returns_df["Date"].dt.strftime("%b %Y")
+                fig = px.bar(monthly_returns_df, x="Month", y=portfolio_daily_returns.name or "Return",
+                             labels={"y": "Monthly Return"},
+                             title="Monthly Portfolio Returns")
+                st.plotly_chart(fig, use_container_width=True)
