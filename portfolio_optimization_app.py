@@ -3,14 +3,13 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from pypfopt import risk_models, expected_returns, EfficientFrontier
-from pypfopt.black_litterman import BlackLittermanModel
 import plotly.express as px
 
 # -------------------------------
 # Page Configuration & Custom CSS
 # -------------------------------
 st.set_page_config(
-    page_title="AI Portfolio Optimization Agent",
+    page_title="Portfolio Optimization Dashboard",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -72,15 +71,16 @@ investment_value = st.sidebar.number_input("Total Investment Value ($)", value=1
 # -------------------------------
 # Main Title
 # -------------------------------
-st.title("AI Portfolio Optimization Agent")
-st.markdown("#### Optimize your portfolio using a Black–Litterman approach with market views and efficient frontier optimization.")
+st.title("Portfolio Optimization Dashboard")
+st.markdown("#### Optimize your portfolio based on investment value using historical data.")
 
 # -------------------------------
 # Helper Functions
 # -------------------------------
-
 def fetch_price_data(tickers, period="1y"):
-    """Fetch historical price data from yfinance and extract the adjusted close (or close) prices."""
+    """
+    Fetch historical price data from yfinance and extract the adjusted close (or close) prices.
+    """
     data = yf.download(tickers, period=period)
     data_extracted = False
     if isinstance(data.columns, pd.MultiIndex):
@@ -106,40 +106,11 @@ def fetch_price_data(tickers, period="1y"):
     data.dropna(inplace=True)
     return data
 
-def construct_black_litterman_returns(data, tickers):
-    """
-    Construct adjusted expected returns using the Black–Litterman model.
-    
-    Uses equal market weights as a proxy for market caps and sets up a simple view:
-    - If AAPL and MSFT are among the tickers, assume AAPL will outperform MSFT by 2%.
-    - Otherwise, set an absolute view for the first ticker (e.g., expected return of 15%).
-    """
-    S = risk_models.sample_cov(data)
-    n = len(tickers)
-    market_weights = np.array([1/n] * n)
-    
-    if "AAPL" in tickers and "MSFT" in tickers:
-        P = np.zeros((1, n))
-        idx_aapl = tickers.index("AAPL")
-        idx_msft = tickers.index("MSFT")
-        P[0, idx_aapl] = 1
-        P[0, idx_msft] = -1
-        Q = np.array([0.02])  # AAPL expected to outperform MSFT by 2%
-    else:
-        P = np.zeros((1, n))
-        P[0, 0] = 1
-        Q = np.array([0.15])  # Absolute view on the first ticker
-    
-    try:
-        bl = BlackLittermanModel(S, pi=None, market_caps=market_weights, delta=2.5, P=P, Q=Q)
-        bl_returns = bl.bl_returns()
-    except Exception as e:
-        st.error(f"Error constructing Black–Litterman model: {e}")
-        return None
-    return bl_returns, S
-
 def optimal_portfolio_from_frontier(mu, S, target_returns):
-    """Loop over a range of target returns using the efficient frontier and select the portfolio with the highest Sharpe ratio."""
+    """
+    Loop over a range of target returns using the efficient frontier,
+    and return the portfolio with the highest Sharpe ratio.
+    """
     best_sharpe = -np.inf
     best_weights = None
     best_perf = None  # (expected return, volatility, sharpe ratio)
@@ -175,21 +146,14 @@ if tickers_input:
             st.success("Historical data successfully fetched!")
             
             # -------------------------------
-            # Construct Black–Litterman Adjusted Returns
-            # -------------------------------
-            bl_returns_S = construct_black_litterman_returns(data, tickers)
-            if bl_returns_S is None:
-                st.stop()
-            bl_returns, S = bl_returns_S
-            
-            # -------------------------------
-            # Optimize Portfolio Using Efficient Frontier Logic
+            # Portfolio Optimization Using Historical Returns
             # -------------------------------
             st.markdown("## Portfolio Optimization")
-            st.markdown("Constructing the efficient frontier using Black–Litterman adjusted returns...")
+            st.markdown("Calculating expected returns and constructing the efficient frontier...")
+            mu = expected_returns.mean_historical_return(data)
+            S = risk_models.sample_cov(data)
             
-            mu = bl_returns  # Use Black-Litterman returns instead of raw historical mean
-            # Create a range of target returns (wider range for flexibility)
+            # Create a range of target returns – using a slightly wider range for flexibility.
             target_returns = np.linspace(mu.min() * 0.9, mu.max() * 1.1, 50)
             opt_weights, opt_perf = optimal_portfolio_from_frontier(mu, S, target_returns)
             
