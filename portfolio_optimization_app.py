@@ -1,5 +1,3 @@
-# portfolio_optimization_app.py
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -20,11 +18,20 @@ tickers_input = st.text_input("Stock Tickers", value="AAPL, MSFT, GOOGL, AMZN")
 investment_value = st.number_input("Total Investment Value ($)", value=10000.0, step=100.0)
 
 if tickers_input:
+    # Clean and prepare ticker list
     tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
     st.write(f"Fetching historical data for: {', '.join(tickers)}")
     
     # Fetch 1 year of historical adjusted closing price data
-    data = yf.download(tickers, period="1y")["Adj Close"]
+    data = yf.download(tickers, period="1y")
+    
+    # Handle data differently if it's a MultiIndex (multiple tickers) or not (single ticker)
+    if isinstance(data.columns, pd.MultiIndex):
+        # Extract the "Adj Close" level from the MultiIndex DataFrame
+        data = data["Adj Close"]
+    else:
+        # For a single ticker, ensure the column is in a DataFrame
+        data = data[["Adj Close"]]
     
     if data.empty:
         st.error("No data was fetched. Please check your ticker symbols.")
@@ -65,7 +72,11 @@ if tickers_input:
         daily_returns = data.pct_change().dropna()
         # Convert weights into a Series aligned with the data columns
         weights_series = pd.Series(cleaned_weights)
-        portfolio_daily_returns = (daily_returns * weights_series).sum(axis=1)
+        # For single-ticker data, align the index properly
+        if len(weights_series) == 1 and isinstance(data, pd.DataFrame):
+            portfolio_daily_returns = daily_returns * weights_series.iloc[0]
+        else:
+            portfolio_daily_returns = (daily_returns * weights_series).sum(axis=1)
         portfolio_value = (1 + portfolio_daily_returns).cumprod() * investment_value
         
         st.line_chart(portfolio_value)
